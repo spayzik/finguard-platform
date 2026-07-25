@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: Transaction Simulator API (FinGuard)
+  version: 1.0.0
+  description: Управление симулятором потока транзакций для нагрузочного тестирования FinGuard.
+servers:
+  - url: http://localhost:8080
+paths:
+  /simulator/start:
+    post:
+      summary: Запустить симуляцию
+      operationId: startSimulation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulatorConfig'
+      responses:
+        '200':
+          description: Симуляция успешно запущена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "started"
+                  simulation_id:
+                    type: string
+                    format: uuid
+                    description: Идентификатор активной симуляции
+                  total_sent:
+                    type: integer
+                    example: 0
+              example:
+                status: "started"
+                simulation_id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+                total_sent: 0
+        '400':
+          description: Неверные параметры (users_count < 1)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_config"
+                message: "users_count must be at least 1"
+  /simulator/stop:
+    post:
+      summary: Остановить симуляцию
+      operationId: stopSimulation
+      responses:
+        '200':
+          description: Симуляция остановлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulatorStatusResponse'
+              example:
+                status: "stopped"
+                total_sent: 250
+        '409':
+          description: Симуляция уже остановлена или не была запущена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "already_stopped"
+                message: "Simulation is not running"
+  /simulator/status:
+    get:
+      summary: Получить текущий статус симуляции
+      operationId: getSimulationStatus
+      responses:
+        '200':
+          description: Текущее состояние симулятора
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulatorStatusResponse'
+              example:
+                status: "running"
+                total_sent: 320
+  /health:
+    get:
+      summary: Проверка работоспособности
+      operationId: simulatorHealth
+      responses:
+        '200':
+          description: Сервис жив
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+components:
+  schemas:
+    SimulatorConfig:
+      type: object
+      required:
+        - users_count
+        - interval_ms
+      properties:
+        users_count:
+          type: integer
+          minimum: 1
+          description: Количество эмулируемых пользователей
+          example: 10
+        interval_ms:
+          type: integer
+          minimum: 0
+          description: Интервал между отправками транзакций в миллисекундах
+          example: 500
+    SimulatorStatusResponse:
+      type: object
+      required:
+        - status
+        - total_sent
+      properties:
+        status:
+          type: string
+          enum: [running, stopped]
+          description: Статус симуляции
+        total_sent:
+          type: integer
+          description: Общее количество отправленных транзакций
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string

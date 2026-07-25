@@ -1,0 +1,185 @@
+openapi: 3.0.3
+info:
+  title: Transaction Ingest API (FinGuard)
+  version: 1.0.0
+  description: Приём и идемпотентное сохранение транзакций для платформы FinGuard.
+servers:
+  - url: http://localhost:8081
+paths:
+  /transactions:
+    post:
+      summary: Создать новую транзакцию (идемпотентный)
+      operationId: createTransaction
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Уникальный ключ идемпотентности, предоставляемый клиентом (UUID)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionRequest'
+      responses:
+        '201':
+          description: Транзакция создана впервые
+          headers:
+            Idempotent-Replayed:
+              description: Признак, был ли запрос обработан повторно (всегда false для 201)
+              schema:
+                type: boolean
+                enum: [false]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              example:
+                transaction_id: "d1e4f5a2-6b8c-4a1d-9e0f-3c7a8b2d5f1e"
+                user_id: "user_123"
+                amount: 250.00
+                currency: "RUB"
+                mcc: "5411"
+                timestamp: "2026-07-25T12:00:00Z"
+                fraud_score: 0.0
+        '200':
+          description: Повторный запрос с тем же Idempotency-Key
+          headers:
+            Idempotent-Replayed:
+              description: Признак, что ответ возвращён из кэша идемпотентности (true)
+              schema:
+                type: boolean
+                enum: [true]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              example:
+                transaction_id: "d1e4f5a2-6b8c-4a1d-9e0f-3c7a8b2d5f1e"
+                user_id: "user_123"
+                amount: 250.00
+                currency: "RUB"
+                mcc: "5411"
+                timestamp: "2026-07-25T12:00:00Z"
+                fraud_score: 0.0
+        '400':
+          description: Невалидное тело запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "validation_error"
+                message: "Request body missing required field 'amount'"
+        '422':
+          description: Сумма <= 0 или MCC пустой
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unprocessable_entity"
+                message: "Amount must be greater than 0 and MCC must not be empty"
+  /transactions/{transaction_id}:
+    get:
+      summary: Получить транзакцию по идентификатору
+      operationId: getTransaction
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Данные транзакции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404':
+          description: Транзакция не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                message: "Transaction with given ID not found"
+  /health:
+    get:
+      summary: Проверка работоспособности сервиса
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Сервис жив
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+components:
+  schemas:
+    TransactionRequest:
+      type: object
+      required:
+        - user_id
+        - amount
+        - currency
+        - mcc
+      properties:
+        user_id:
+          type: string
+          description: Идентификатор пользователя
+          example: "user_123"
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: Сумма транзакции (строго больше нуля)
+          example: 250.00
+        currency:
+          type: string
+          description: ISO-код валюты
+          example: "RUB"
+        mcc:
+          type: string
+          minLength: 1
+          description: Код категории продавца (MCC), не может быть пустым
+          example: "5411"
+    Transaction:
+      allOf:
+        - $ref: '#/components/schemas/TransactionRequest'
+        - type: object
+          required:
+            - transaction_id
+            - timestamp
+          properties:
+            transaction_id:
+              type: string
+              format: uuid
+              description: Уникальный идентификатор транзакции
+            timestamp:
+              type: string
+              format: date-time
+              description: Время создания транзакции
+            fraud_score:
+              type: number
+              default: 0.0
+              description: Оценка мошенничества от 0 до 1
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Код ошибки
+        message:
+          type: string
+          description: Человекочитаемое описание
